@@ -254,7 +254,8 @@ body{min-height:100vh;background:radial-gradient(rgba(255,255,255,.16) 1px,trans
         <button data-theme-set="dark" aria-label="Tema escuro"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg></button>
       </div>
     </div>
-    <div class="who"><div class="avatar" style="width:30px;height:30px;font-size:12px">J</div><div><div style="font-size:13px;font-weight:600">João</div><div class="status" id="status">Carregando…</div></div></div>
+    <div class="who"><div class="avatar" style="width:30px;height:30px;font-size:12px">J</div><div><div style="min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="whoName">João</div><div class="status" id="status">Carregando…</div></div></div>
+    <button class="btn" id="authBtn" style="justify-content:center;margin-top:6px" hidden>Entrar com Google para sincronizar</button>
   </nav>
 
   <div class="main">
@@ -282,6 +283,31 @@ body{min-height:100vh;background:radial-gradient(rgba(255,255,255,.16) 1px,trans
   </div>
 </div>
 
+<script type="module">
+// Firebase: login com Google + Firestore. A config abaixo é pública por natureza;
+// quem protege os dados são as regras do Firestore (cada usuário só acessa users/<seu id>).
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+import {getAuth,GoogleAuthProvider,signInWithPopup,signOut,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+import {getFirestore,doc,onSnapshot,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
+const app=initializeApp({
+  apiKey:'AIzaSyA-a4WI6Jgq328SiycfiNmaqgeurRBA9Qg',
+  authDomain:'jpppp-955aa.firebaseapp.com',
+  projectId:'jpppp-955aa',
+  storageBucket:'jpppp-955aa.firebasestorage.app',
+  messagingSenderId:'729316941513',
+  appId:'1:729316941513:web:5795568543b0f3c77d7718'
+});
+const auth=getAuth(app),db=getFirestore(app);
+const ref=(uid,appId)=>doc(db,'users',uid,'apps',appId);
+window.FB={
+  signIn:()=>signInWithPopup(auth,new GoogleAuthProvider()),
+  signOut:()=>signOut(auth),
+  onUser:cb=>onAuthStateChanged(auth,cb),
+  watch:(uid,appId,cb,err)=>onSnapshot(ref(uid,appId),cb,err),
+  save:(uid,appId,json)=>setDoc(ref(uid,appId),{estado:json,atualizado:serverTimestamp()})
+};
+window.dispatchEvent(new Event('fb-ready'));
+</script>
 <input type="file" id="impFile" accept=".ofx,.csv,.txt,text/csv,application/x-ofx" multiple hidden>
 <dialog id="dlg">
   <form id="dlgForm" method="dialog"></form>
@@ -467,37 +493,48 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function dd(d,ym){return String(d).padStart(2,'0')+'/'+String(ymParts(ym).m+1).padStart(2,'0');}
 
 /* ---------- storage ---------- */
-// Loads instantly from this browser; then, if the account storage answers, switches to it.
-var LS_KEY='minhas-financas-v1';
+// Sempre guarda uma cópia neste navegador. Com login do Google, também salva no Firebase
+// (users/<id>/apps/financas) e recebe na hora o que for alterado em outro aparelho.
+var LS_KEY='minhas-financas-v1',APP_ID='financas';
 function setStatus(t){var el=document.getElementById('status');if(el)el.textContent=t;}
 function readLocal(){try{var raw=localStorage.getItem(LS_KEY);return raw?JSON.parse(raw):null;}catch(e){return null;}}
 function writeLocal(){try{localStorage.setItem(LS_KEY,JSON.stringify(S));return true;}catch(e){return false;}}
 function withTimeout(p,ms){return new Promise(function(res,rej){var t=setTimeout(function(){rej(new Error('timeout'));},ms);Promise.resolve(p).then(function(v){clearTimeout(t);res(v);},function(e){clearTimeout(t);rej(e);});});}
-async function connectAccount(hadLocal){
-  try{
-    if(!window.claude||!window.claude.use)return;
-    var db=await withTimeout(window.claude.use('db'),12000);
-    var user=await withTimeout(window.claude.use('user'),12000);
-    if(!db||!user)return;
-    var id=await withTimeout(user.id(),8000);
-    if(!id)return;
-    var ref=db.collection('data/users/'+id).doc('financas');
-    var snap=await withTimeout(ref.get(),10000);
-    store={kind:'db',ref:ref};
-    var remote=snap&&snap.exists?migrate((snap.data()||{}).estado):null;
-    if(remote){S=remote;writeLocal();render();}
-    else if(hadLocal){flush();}
-    setStatus('Salvo na sua conta');
-  }catch(e){setStatus('Salvo neste navegador');}
+var cloud={uid:null,nome:'',unsub:null};
+function renderAuth(){
+  var b=document.getElementById('authBtn'),n=document.getElementById('whoName');if(!b)return;
+  b.hidden=!window.FB;
+  b.textContent=cloud.uid?'Sair da conta':'Entrar com Google para sincronizar';
+  if(n)n.textContent=cloud.uid?(cloud.nome||'Você'):'João';
+}
+function parseRemote(snap){if(!snap.exists())return null;var d=snap.data()||{};try{return migrate(JSON.parse(d.estado));}catch(e){return null;}}
+function initCloud(){
+  if(!window.FB)return;renderAuth();
+  FB.onUser(function(u){
+    if(cloud.unsub){cloud.unsub();cloud.unsub=null;}
+    cloud.uid=u?u.uid:null;cloud.nome=u?(u.displayName||u.email||''):'';renderAuth();
+    if(!u){store={kind:'local'};setStatus('Salvo neste navegador');return;}
+    setStatus('Conectando…');var first=true;
+    cloud.unsub=FB.watch(u.uid,APP_ID,function(snap){
+      if(snap.metadata.hasPendingWrites)return; // é a nossa própria gravação
+      var remote=parseRemote(snap);
+      if(first){first=false;store={kind:'cloud'};
+        if(remote){S=remote;writeLocal();render();setStatus('Sincronizado');}
+        else if(S&&!S.exemplo){flush();} // primeira vez: leva os dados deste navegador para a conta
+        else setStatus('Sincronizado');
+        return;}
+      if(remote){S=remote;writeLocal();render();setStatus('Sincronizado');}
+    },function(){store={kind:'local'};setStatus('Sem acesso à conta: salvo neste navegador');});
+  });
 }
 var saveTimer=null,saving=false,pending=false;
 function save(){writeLocal();clearTimeout(saveTimer);saveTimer=setTimeout(flush,600);}
 async function flush(){
-  if(store.kind!=='db'){setStatus(writeLocal()?'Salvo neste navegador':'Não foi possível salvar');return;}
+  if(store.kind!=='cloud'||!cloud.uid){setStatus(writeLocal()?'Salvo neste navegador':'Não foi possível salvar');return;}
   if(saving){pending=true;return;}
   saving=true;setStatus('Salvando…');
-  try{await withTimeout(store.ref.set({estado:JSON.parse(JSON.stringify(S))}),10000);setStatus('Salvo na sua conta');}
-  catch(e){setStatus('Salvo neste navegador');}
+  try{await withTimeout(FB.save(cloud.uid,APP_ID,JSON.stringify(S)),15000);setStatus('Sincronizado');}
+  catch(e){setStatus('Sem conexão: salvo neste navegador');}
   saving=false;if(pending){pending=false;flush();}
 }
 function commit(){save();render();}
@@ -912,8 +949,8 @@ document.addEventListener('change',function(e){
   if(t.dataset.f==='cat'&&t.closest('[data-list="lanc"]')){
     // aprende: mesma descrição passa a usar esta categoria, agora e nos próximos extratos
     var tx=S.lanc.find(function(x){return x.id===t.closest('tr').dataset.id;});if(!tx)return;
-    var key=normDesc(tx.desc),cnt=0;S.regras[key]=t.value;
-    S.lanc.forEach(function(x){if(x.valor<0&&normDesc(x.desc)===key){if(x.cat!==t.value&&x!==tx)cnt++;x.cat=t.value;}});
+    var key=normDesc(tx.desc),cnt=0;if(key)S.regras[key]=t.value;
+    S.lanc.forEach(function(x){if(key&&x.valor<0&&normDesc(x.desc)===key){if(x.cat!==t.value&&x!==tx)cnt++;x.cat=t.value;}});
     ui.impMsg='Categoria salva.'+(cnt?' Também apliquei em '+cnt+' lançamento'+(cnt>1?'s':'')+' com a mesma descrição.':'');
     commit();refocus(fid);return;}
   if(t.dataset.s){var k=t.dataset.s;
@@ -981,7 +1018,16 @@ var local=null;try{local=migrate(readLocal());}catch(e){local=null;}
 S=local||example();
 route();
 setStatus('Salvo neste navegador');
-connectAccount(!!local);
+document.getElementById('authBtn').onclick=function(){
+  if(!window.FB)return;
+  if(cloud.uid){if(confirm('Sair da conta? Seus dados continuam salvos nela e uma cópia fica neste navegador.'))FB.signOut();return;}
+  FB.signIn().catch(function(e){var c=e&&e.code||'';
+    if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')return;
+    if(c==='auth/popup-blocked'||c==='auth/operation-not-supported-in-this-environment'){alert('O navegador bloqueou a janela de login. Permita pop-ups para este site (ícone na barra de endereço) e clique de novo em "Entrar com Google".');return;}
+    if(c==='auth/unauthorized-domain'){alert('Este endereço ainda não está liberado no Firebase (Authentication › Configurações › Domínios autorizados).');return;}
+    alert('Não foi possível entrar ('+(c||'erro')+').');});
+};
+if(window.FB)initCloud();else window.addEventListener('fb-ready',initCloud);
 })();
 </script>
 </body>
