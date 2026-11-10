@@ -254,8 +254,7 @@ body{min-height:100vh;background:radial-gradient(rgba(255,255,255,.16) 1px,trans
         <button data-theme-set="dark" aria-label="Tema escuro"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/></svg></button>
       </div>
     </div>
-    <div class="who"><div class="avatar" style="width:30px;height:30px;font-size:12px">J</div><div><div style="min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="whoName">João</div><div class="status" id="status">Carregando…</div></div></div>
-    <button class="btn" id="authBtn" style="justify-content:center;margin-top:6px" hidden>Entrar com Google para sincronizar</button>
+    <div class="who"><div class="avatar" style="width:30px;height:30px;font-size:12px">J</div><div><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" id="whoName">João</div><div class="status" id="status">Carregando…</div></div></div>
   </nav>
 
   <div class="main">
@@ -265,7 +264,8 @@ body{min-height:100vh;background:radial-gradient(rgba(255,255,255,.16) 1px,trans
         <button class="iconbtn" id="next" aria-label="Próximo mês"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
         <div class="month" id="monthTitle" aria-live="polite"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="authBtn" style="height:40px" hidden><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.2c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 010-4.3V7.1H2.1a11 11 0 000 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 002.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg><span id="authTxt">Entrar com Google</span></button>
         <button class="bell" id="bell"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 004 0"/></svg><span class="badge" id="badge" hidden></span></button>
         <div class="split">
           <button class="add" id="addBtn">+ Adicionar</button>
@@ -504,7 +504,8 @@ var cloud={uid:null,nome:'',unsub:null};
 function renderAuth(){
   var b=document.getElementById('authBtn'),n=document.getElementById('whoName');if(!b)return;
   b.hidden=!window.FB;
-  b.textContent=cloud.uid?'Sair da conta':'Entrar com Google para sincronizar';
+  document.getElementById('authTxt').textContent=cloud.uid?'Sair':'Entrar com Google';
+  b.title=cloud.uid?'Conectado: os dados sincronizam entre aparelhos':'Entre para sincronizar seus dados entre aparelhos';
   if(n)n.textContent=cloud.uid?(cloud.nome||'Você'):'João';
 }
 function parseRemote(snap){if(!snap.exists())return null;var d=snap.data()||{};try{return migrate(JSON.parse(d.estado));}catch(e){return null;}}
